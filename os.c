@@ -430,8 +430,14 @@ int OS_AddProcess(entry_t entry, void* text, void* data, uint8_t priority, uint8
   NextPt = RunPt; // Necessary for PendSV
   RunPt = PLR; // Necessary for PendSV
   NVIC_INT_CTRL_R = 0x10000000; // Trigger PendSV to switch threads... and also processes
-
-  return 0xDEADBEEF; //should never happen
+  
+  EnableInterrupts(); // The entire process should happen here <-
+  
+  // This only happens AFTER the process has happened, 
+  //  has been killed, and we're returning to the original process
+  Heap_Free(text); // Deallocate memory
+  Heap_Free(data);
+  return 1; // Indicate success
 }
 
 unsigned long OS_LockScheduler(void){
