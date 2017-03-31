@@ -22,7 +22,7 @@
                               // create index implementation FIFO (see FIFO.h)
 #define MAILBOXSIZE 30
 
-
+struct TCB * PLR = 0;
 
 static uint8_t OS_FIFO_Index;
 
@@ -37,6 +37,8 @@ static uint8_t OS_MAIL_Index;
 
 static Sema4Type MailFree;
 static Sema4Type MailValid;
+
+void static OS_EndProcess(void);
 
 void OS_Fifo_Init(){
   OSFifo_Init();
@@ -375,14 +377,35 @@ unsigned long OS_MsTime(void){
   
 }
 
+void OS_Idle(void){
+  while(1){
+    if((RunPt->next == RunPt) && (PLR != 0)){
+      OS_EndProcess();
+    }
+    OS_Suspend();
+  }
+}
+
 void OS_LaunchSystem(unsigned long theTimeSlice){
   SysTick_Init(theTimeSlice);
   OS_Launch();
 }
+
+//Should only be called by OS_Idle, when OS_Idle is the only remaining thread
+void static OS_EndProcess(void){
+  if((RunPt->next == RunPt) && (PLR != 0)){ //check conditions
+    RunPt->id = 0; // lazy kill idle
+    NextPt = PLR;  // where to return to
+    PLR = 0;       // no longer nested
+    NVIC_INT_CTRL_R = 0x10000000; // Trigger PendSV to switch threads... and also processes
+  }
+}
+
 //entry is starting PC, text and data are pointers to malloced data (must be freed upon ending)
 //sr is used to reenable the SYSTICK (see below, like enter and exit critial)
 int OS_AddProcess(entry_t entry, void* text, void* data, uint8_t priority, uint8_t id, long sr){
   OS_UnLockScheduler(sr);
+  // MATTHEW'S NOTES:
   //get a PCB and set it up with the id, priority, and pointers
   //set a TCB up with the "entry" pointer as the PC
   //set a TCB up with the idle task and link the two together
@@ -393,6 +416,22 @@ int OS_AddProcess(entry_t entry, void* text, void* data, uint8_t priority, uint8
   //note: kill decrements
   //note: on PCB thread_count == 1 (just idle) kill the process, unmalloc memory, return to system process
   //set a resume point before os_suspend: ResumeSysProc = RunPt;
+  
+  // ANDREW'S NOTES:
+  // I don't use text, data, priority, or id. I'm leaving them, because we might need them later
+  
+  if(!PLR){ //Check that this isn't a double nested Process i.e. there are only 2 allowed
+    return 0;
+  }
+  PLR = RunPt; // save where to return
+  RunPt = 0;   // necessary for AddThread to create an unconnected linked list
+  OS_AddThread(entry, 0xFF, 2); // We will start with this thread
+  OS_AddThread(OS_Idle, 0xFF, 1); // In case all sleep, block, or are killed
+  NextPt = RunPt; // Necessary for PendSV
+  RunPt = PLR; // Necessary for PendSV
+  NVIC_INT_CTRL_R = 0x10000000; // Trigger PendSV to switch threads... and also processes
+
+  return 0xDEADBEEF; //should never happen
 }
 
 unsigned long OS_LockScheduler(void){
