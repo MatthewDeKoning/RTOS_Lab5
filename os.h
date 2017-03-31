@@ -242,7 +242,7 @@ void OS_bSignal(Sema4Type *semaPt);
 // In Lab 3, you can ignore the stackSize fields
 int OS_AddThread(void(*task)(void),  uint8_t priority, uint8_t id);
 
-int OS_AddProcess(entry_t entry, void* text, void* data, uint8_t priority, uint8_t id);
+int OS_AddProcess(entry_t entry, void* text, void* data, uint8_t priority, uint8_t id, long sr);
 
 //******** OS_Id *************** 
 // returns the thread ID for the currently running thread
@@ -426,4 +426,7 @@ unsigned long OS_MsTime(void);
 void OS_Launch();
 void OS_LaunchSystem(unsigned long theTimeSlice);
 void PortB_Init(void);
+
+unsigned long OS_LockScheduler(void);
+void OS_UnLockScheduler(unsigned long previous);
 #endif

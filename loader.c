@@ -615,17 +615,17 @@ static int relocateProgram(ELFExec_t *e) {
   return 0;
 }
 
-static int jumpTo(off_t ofs, void* text, void* data) {
+static int jumpTo(off_t ofs, void* text, void* data, long sr) {
   if (ofs) {
     entry_t *entry = (entry_t*)((char*)text + ofs);
-    return LOADER_JUMP_TO(entry, text, data);
+    return LOADER_JUMP_TO(entry, text, data, sr);
   } else {
     MSG("No entry defined.");
     return -1;
   }
 }
 
-int exec_elf(const char *path, const ELFEnv_t *env) {
+int exec_elf(const char *path, const ELFEnv_t *env, long sr) {
 #ifdef VALVANOWARE
   static ELFExec_t exec;  // avoid stack overflow on limited microcontroller
 #else
@@ -646,7 +646,7 @@ int exec_elf(const char *path, const ELFEnv_t *env) {
         relocateProgram(&exec);
       }
       ret = jumpTo(exec.entry,
-                   exec.loadText.data, exec.loadData.data);
+                   exec.loadText.data, exec.loadData.data, sr);
       freeElf(&exec);
       return ret;
     } else {
@@ -657,7 +657,7 @@ int exec_elf(const char *path, const ELFEnv_t *env) {
     if (IS_FLAGS_SET(loadSymbols(&exec), FoundValid)) {
       int ret = -1;
       if (relocateSections(&exec) == 0)
-        ret = jumpTo(exec.entry, exec.text.data, 0);
+        ret = jumpTo(exec.entry, exec.text.data, 0, sr);
       freeElf(&exec);
       return ret;
     } else {

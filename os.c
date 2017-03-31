@@ -8,6 +8,7 @@
 #include "uart.h"
 #include "st7735.h"
 #include "ff.h"
+#include "heap.h"
 
 #define TRUE  1
 #define FALSE 0
@@ -334,8 +335,9 @@ void OS_Init(void){
   UART_Init();              // initialize UART
   INTERPRETER_initArray();
   PortB_Init();
+  Heap_Init();
   ST7735_ds_InitR(INITR_REDTAB, 4, 4, 4, 4);
-  f_mount(&g_sFatFs, "", 0);
+  f_mount(&g_sFatFs, "", 1);
   Timer2_Init(10000); 
   DisableInterrupts();//run the periodic functions ever 0.000125 seconds - 8 KHz
 	for(i = TCB_COUNT; i > 0; i--){
@@ -377,7 +379,51 @@ void OS_LaunchSystem(unsigned long theTimeSlice){
   SysTick_Init(theTimeSlice);
   OS_Launch();
 }
-
-int OS_AddProcess(entry_t entry, void* text, void* data, uint8_t priority, uint8_t id){
-  
+//entry is starting PC, text and data are pointers to malloced data (must be freed upon ending)
+//sr is used to reenable the SYSTICK (see below, like enter and exit critial)
+int OS_AddProcess(entry_t entry, void* text, void* data, uint8_t priority, uint8_t id, long sr){
+  OS_UnLockScheduler(sr);
+  //get a PCB and set it up with the id, priority, and pointers
+  //set a TCB up with the "entry" pointer as the PC
+  //set a TCB up with the idle task and link the two together
+  //set next pointer as the idle and os_suspend (this will switch to the main thread from the idle one
+  //set thread count to 1
+  //note: TCB's now need a pointer to parent PCB
+  //note: Add thread needs to increment parent PCB's threadcount
+  //note: kill decrements
+  //note: on PCB thread_count == 1 (just idle) kill the process, unmalloc memory, return to system process
+  //set a resume point before os_suspend: ResumeSysProc = RunPt;
 }
+
+unsigned long OS_LockScheduler(void){
+  unsigned long old = NVIC_ST_CTRL_R;
+  NVIC_ST_CTRL_R = NVIC_ST_CTRL_ENABLE+NVIC_ST_CTRL_CLK_SRC;
+  return old;
+}
+void OS_UnLockScheduler(unsigned long previous){
+  NVIC_ST_CTRL_R = previous;
+}
+
+
+//PCB ideas
+/*
+struct PCB{
+  void *text;
+  void *data
+  uint8_t priority
+  uint8_t id
+  uint8_t thread_count
+}
+
+TCB * ResumeSysProc could be the pointer to resume the running task
+
+have a global process count - if trying to add when it is equal to 2 already, don't!
+process kill is triggered at the end of OS_Kill if the process thread_count ==1
+process kill: free(text), free(data), set other variables to 0, set RunPt to ResumeSysProc
+could write a function to be called here that just jumps to the PC value of the TCB pointed to in ResumeSysProc
+These are all ideas and you could have a better way!
+
+Note: we have 10 TCB's statically allocated: main needs 3 and added process needs 3, so no need to dynamically allocate/declare more
+Note: the idle thread is added because the Proc5.axf functions will both sleep at the same time, system can't crash
+I will finish the SVC calls and test them before we meet tomorrow
+*/

@@ -79,7 +79,7 @@ extern ELFEnv_t env;
  * @retval -1 On fail
  * @todo Error information
  */
-extern int exec_elf(const char *path, const ELFEnv_t *env);
+extern int exec_elf(const char *path, const ELFEnv_t *env, long sr);
 
 /** @} */
 

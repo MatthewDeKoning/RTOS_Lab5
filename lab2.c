@@ -37,6 +37,8 @@
 #include "string.h"
 #include <stdint.h>
 #include "diskio.h"
+#include "heap.h"
+#include "ff.h"
 
 unsigned long NumCreated;
 #include "Switch.h"
@@ -517,6 +519,7 @@ Sorry the main is a mess right now. Port B and LCD code are mutually exclusive..
 void Idle(){
   while(1){};
 }
+
 
 int main(void){  // Testmain1 coop
   

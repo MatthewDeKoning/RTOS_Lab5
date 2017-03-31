@@ -24,11 +24,12 @@ ELFEnv_t environment;
 
 //The function to run as interpreter thread
 void INTERPRETER_Run(){
+  long sr;
   while(1){
 #if DEBUG
     Debug_Task(7);
 #endif //DEBUG
-    symbol_table.name = "Display_Message";
+    symbol_table.name = "ST7735_ds_Message";
     symbol_table.ptr = &ST7735_ds_Message;
     environment.exported = &symbol_table;
     environment.exported_size = 1;
@@ -40,8 +41,8 @@ void INTERPRETER_Run(){
     if(interpreter_device == -1){
       if(interpreter_line == -2){
         //exec elf!
-        DisableSysTick();
-        exec_elf("Proc.axf", &environment);
+        sr = OS_LockScheduler();
+        exec_elf("Proc.axf", &environment, sr);
         EnableSysTick();
       }
       else{
