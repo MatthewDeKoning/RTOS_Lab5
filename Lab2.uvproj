@@ -206,7 +206,7 @@
             <AdsLsun>1</AdsLsun>
             <AdsLven>1</AdsLven>
             <AdsLsxf>1</AdsLsxf>
-            <RvctClst>1</RvctClst>
+            <RvctClst>0</RvctClst>
             <GenPPlst>0</GenPPlst>
             <AdsCpuType>"Cortex-M4"</AdsCpuType>
             <RvctDeviceName></RvctDeviceName>
@@ -406,6 +406,21 @@
           <GroupName>Source</GroupName>
           <Files>
             <File>
+              <FileName>ADC_Collect.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\ADC_Collect.c</FilePath>
+            </File>
+            <File>
+              <FileName>interpreter.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\interpreter.c</FilePath>
+            </File>
+            <File>
+              <FileName>lab2.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\lab2.c</FilePath>
+            </File>
+            <File>
               <FileName>os.c</FileName>
               <FileType>1</FileType>
               <FilePath>.\os.c</FilePath>
@@ -414,21 +429,6 @@
               <FileName>PLL.c</FileName>
               <FileType>1</FileType>
               <FilePath>.\PLL.c</FilePath>
-            </File>
-            <File>
-              <FileName>SysTick.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>.\SysTick.c</FilePath>
-            </File>
-            <File>
-              <FileName>osasm.s</FileName>
-              <FileType>2</FileType>
-              <FilePath>.\osasm.s</FilePath>
-            </File>
-            <File>
-              <FileName>interpreter.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>.\interpreter.c</FilePath>
             </File>
             <File>
               <FileName>ST7735.c</FileName>
@@ -446,24 +446,24 @@
               <FilePath>.\Switch.c</FilePath>
             </File>
             <File>
+              <FileName>SysTick.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\SysTick.c</FilePath>
+            </File>
+            <File>
+              <FileName>Timer4A.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\Timer4A.c</FilePath>
+            </File>
+            <File>
+              <FileName>Timer5A.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\Timer5A.c</FilePath>
+            </File>
+            <File>
               <FileName>UART.c</FileName>
               <FileType>1</FileType>
               <FilePath>.\UART.c</FilePath>
-            </File>
-            <File>
-              <FileName>os_startup.s</FileName>
-              <FileType>2</FileType>
-              <FilePath>.\os_startup.s</FilePath>
-            </File>
-            <File>
-              <FileName>os_isr.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>.\os_isr.c</FilePath>
-            </File>
-            <File>
-              <FileName>memManager.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>.\memManager.c</FilePath>
             </File>
             <File>
               <FileName>cr4_fft_64_stm32.s</FileName>
@@ -471,29 +471,19 @@
               <FilePath>.\cr4_fft_64_stm32.s</FilePath>
             </File>
             <File>
+              <FileName>osasm.s</FileName>
+              <FileType>2</FileType>
+              <FilePath>.\osasm.s</FilePath>
+            </File>
+            <File>
               <FileName>PID_stm32.s</FileName>
               <FileType>2</FileType>
               <FilePath>.\PID_stm32.s</FilePath>
             </File>
             <File>
-              <FileName>eDisk.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>.\eDisk.c</FilePath>
-            </File>
-            <File>
-              <FileName>efile.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>.\efile.c</FilePath>
-            </File>
-            <File>
-              <FileName>main.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>.\main.c</FilePath>
-            </File>
-            <File>
-              <FileName>lab2.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>.\lab2.c</FilePath>
+              <FileName>startup.s</FileName>
+              <FileType>2</FileType>
+              <FilePath>.\startup.s</FilePath>
             </File>
           </Files>
         </Group>

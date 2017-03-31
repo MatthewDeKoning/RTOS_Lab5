@@ -39,12 +39,6 @@
 #include "os.h"
 #include "SysTick.h"
 
-void DisableInterrupts(void); // Disable interrupts
-void EnableInterrupts(void);  // Enable interrupts
-long StartCritical (void);    // previous I bit, disable interrupts
-void EndCritical(long sr);    // restore I bit to previous value
-void WaitForInterrupt(void);  // low power mode
-
 #define PB5  (*((volatile unsigned long *)0x40005080)) 
 #define NVIC_ST_CTRL_SYSTICK_count      0x00010000  // SYSTICK_count flag
 #define NVIC_ST_CTRL_CLK_SRC    0x00000004  // Clock Source
@@ -53,30 +47,30 @@ void WaitForInterrupt(void);  // low power mode
 #define NVIC_ST_RELOAD_M        0x00FFFFFF  // SYSTICK_counter load value
 
 static uint32_t SYSTICK_count[10];
-
+static uint32_t time;
 // Initialize SysTick with busy wait running at bus clock.
 void SysTick_Init(uint32_t time){
+  time = time;
   NVIC_ST_CTRL_R = 0;                   // disable SysTick during setup
   NVIC_ST_RELOAD_R = (NVIC_ST_RELOAD_M & time);  // maximum reload value
   NVIC_ST_CURRENT_R = 0;                // any write to current clears it
   //set priority of 6 for systick                                   
-  NVIC_SYS_PRI3_R |=0xC0000000;  
+  NVIC_SYS_PRI3_R |=6<<29;  
   NVIC_ST_CTRL_R = 0x7;                 // enable SysTick with core clock and interrupts
 
 }
 
-void SysTick_Disable(void){
-  long sr = StartCritical();
-  NVIC_ST_CTRL_R &= ~0x1;   
-  EndCritical(sr);
+void DisableSysTick(){
+  NVIC_ST_CTRL_R = 0x0;
 }
-
-void SysTick_Enable(void){
-  long sr = StartCritical();
-  NVIC_ST_CTRL_R |= 0x1;
-  EndCritical(sr);
+void EnableSysTick(){
+  NVIC_ST_CTRL_R = 0x7;
 }
-
+//set the SysTick clock
+void SysTick_SetTime(uint32_t time){
+  NVIC_ST_RELOAD_R = (time & 0x00FFFFFF);  // maximum reload value
+  NVIC_ST_CURRENT_R = 0;  
+}
 // Time delay using busy wait.
 // The delay parameter is in units of the core clock. (units of 20 nsec for 50 MHz clock)
 void SysTick_Wait(uint32_t delay){
@@ -92,23 +86,25 @@ void SysTick_Wait(uint32_t delay){
 void SysTick_Wait10ms(uint32_t delay){
   uint32_t i;
   for(i=0; i<delay; i++){
-    SysTick_Wait(800000);  // wait 10ms (assumes 50 MHz clock)
+    SysTick_Wait(500000);  // wait 10ms (assumes 50 MHz clock)
   }
 }
 
-//set the SysTick clock
-void SysTick_SetTime(uint32_t time){
-  NVIC_ST_RELOAD_R = (time & 0x00FFFFFF);  // maximum reload value
-  NVIC_ST_CURRENT_R = 0;  
-}
-
-uint32_t SysTick_GetTime(void){
+uint32_t SYSTICK_getTime(void){
   return NVIC_ST_CURRENT_R;
 }
 
+void SYSTICK_setCount(uint8_t id){
+  SYSTICK_count[id] = 0;
+}
+
+uint32_t SYSTICK_getCount(uint8_t id){
+  return SYSTICK_count[id];
+}
 void SysTick_Handler(void){
-long sr = StartCritical();
-  OS_ResetCurrentTimeSlice();
-  EndCritical(sr);
-  OS_Suspend(); 
+  int i = 0;
+  //PB5 ^= 0x20;
+  for(i = 0; i < 10; i++){SYSTICK_count[i]++;}
+  
+  OS_Suspend(); // Trigger PendSV
 }

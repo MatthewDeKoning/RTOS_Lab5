@@ -31,33 +31,25 @@
 // PD2 Ain5 sampled at 250Hz, sequencer 0, by Producer, timer tigger
 
 #include "os.h"
-#include "os_isr.h"
 #include "PLL.h"
 #include "../inc/tm4c123gh6pm.h"
 #include "SysTick.h"
 #include "string.h"
 #include <stdint.h>
+#include "diskio.h"
 
 unsigned long NumCreated;
 #include "Switch.h"
 #include "ST7735.h"
+#include "ADC_Collect.h"
 #include "UART.h"
 #include "interpreter.h"
-#include "eDisk.h"
-#include "eFile.h"
 
 void DisableInterrupts(void);
 void EnableInterrupts(void);
 long StartCritical(void);
 void EndCritical(long sr);
 void WaitForInterrupt(void);
-
-#define PB2  (*((volatile unsigned long *)0x40005010))
-#define PB3  (*((volatile unsigned long *)0x40005020))
-#define PB4  (*((volatile unsigned long *)0x40005040))
-#define PB5  (*((volatile unsigned long *)0x40005080))
-#define PB6  (*((volatile unsigned long *)0x40005100))
-
 
 //*********Prototype for FFT in cr4_fft_64_stm32.s, STMicroelectronics
 void cr4_fft_64_stm32(void *pssOUT, void *pssIN, unsigned short Nbin);
@@ -79,10 +71,14 @@ long x[64],y[64];         // input and output arrays for FFT
 
 //---------------------User debugging-----------------------
 unsigned long DataLost;     // data sent by Producer, but not received by Consumer
-/*
-#define JITTERSIZE 20000
-unsigned long JitterHistogram[JITTERSIZE];
-*/
+long MaxJitter;             // largest time jitter between interrupts in usec
+#define JITTERSIZE 64
+unsigned long const JitterSize=JITTERSIZE;
+unsigned long JitterHistogram[JITTERSIZE]={0,};
+
+
+
+
 
 
 
@@ -96,11 +92,17 @@ long Filter(long data){
 static long x[6]; // this MACQ needs twice
 static long y[6];
 static unsigned long n=3;   // 3, 4, or 5
+#if DEBUG
+  Debug_Task(1);
+#endif //DEBUG
   n++;
   if(n==6) n=3;     
   x[n] = x[n-3] = data;  // two copies of new data
   y[n] = (256*(x[n]+x[n-2])-503*x[n-1]+498*y[n-1]-251*y[n-2]+128)/256;
   y[n-3] = y[n];         // two copies of filter outputs too
+#if DEBUG
+  Debug_Task(1);
+#endif //DEBUG
   return y[n];
 } 
 //******** DAS *************** 
@@ -113,14 +115,41 @@ unsigned long DASoutput;
 void DAS(void){ 
 DisableInterrupts();
 unsigned long input;  
-#if OS_DEBUG
-Debug_Task0
-#endif
+unsigned static long LastTime;  // time at previous ADC sample
+unsigned long thisTime;         // time at current ADC sample
+long jitter;                    // time between measured and expected, in us
+#if DEBUG
+  Debug_Task(0);
+#endif //DEBUG
   if(NumSamples < RUNLENGTH){   // finite time run
-    input = ADC0Seq3_Get();           // channel set when calling ADC_Init
+#if DEBUG
+  Debug_Task(0);
+#endif //DEBUG
+    input = ADC_Get();           // channel set when calling ADC_Init
+    thisTime = OS_Time();       // current time, 12.5 ns
     DASoutput = Filter(input);
     FilterWork++;        // calculation finished
+    if(FilterWork>1){    // ignore timing of first interrupt
+      unsigned long diff = OS_TimeDifference(LastTime,thisTime);
+      if(diff>PERIOD){
+        jitter = (diff-PERIOD+4)/8;  // in 0.1 usec
+      }else{
+        jitter = (PERIOD-diff+4)/8;  // in 0.1 usec
+      }
+      if(jitter > MaxJitter){
+        MaxJitter = jitter; // in usec
+      }       // jitter should be 0
+      if(jitter >= JitterSize){
+        jitter = JITTERSIZE-1;
+      }
+      JitterHistogram[jitter]++; 
+    }
+    LastTime = thisTime;
+    PB2 ^= 0x04;
   }
+#if DEBUG
+  Debug_Task(0);
+#endif //DEBUG
   EnableInterrupts();
 }
 //--------------end of Task 1-----------------------------
@@ -135,28 +164,35 @@ const char* four = "Jitter 0.1us= ";
 // foreground treads run for 2 sec and die
 // ***********ButtonWork*************
 void ButtonWork(void){
-#if OS_DEBUG
-Debug_Task1
-#endif
+#if DEBUG
+  Debug_Task(2);
+#endif //DEBUG
+  /*
   uint8_t i;
-  //unsigned long myId = OS_Id(); 
+  unsigned long myId = OS_Id(); 
   for(i = 0; i < 13; i++){task2string[i] = one[i];}
   itoa(NumCreated, task2string, 10, 13);
-  LCD_MailBox_Send(1, 0, task2string);
+  OS_MailBox_Send(1, 0, task2string);
   
   OS_Sleep(50);     // set this to sleep for 50msec
   for(i = 0; i < 20; i++){task2string[i] = '\0';}
   for(i = 0; i < 10; i++){task2string[i] = two[i];}
   itoa(PIDWork, task2string, 10, 10);
-  LCD_MailBox_Send(1, 1, task2string); 
+  OS_MailBox_Send(1, 1, task2string); 
   for(i = 0; i < 20; i++){task2string[i] = '\0';}
   for(i = 0; i < 11; i++){task2string[i] = three[i];}
   itoa(DataLost, task2string, 10, 11);
-  LCD_MailBox_Send(1, 2, task2string); 
+  OS_MailBox_Send(1, 2, task2string); 
   for(i = 0; i < 20; i++){task2string[i] = '\0';}
   for(i = 0; i < 14; i++){task2string[i] = four[i];}
-  itoa(OS_getMaxJitter(0), task2string, 10, 14);
-  LCD_MailBox_Send(1, 3, task2string); 
+  itoa(MaxJitter, task2string, 10, 14);
+  OS_MailBox_Send(1, 3, task2string); 
+  */
+  OS_MailBox_Send(0, 0, "ButtonPressed");
+#if DEBUG
+  Debug_Task(2);
+#endif //DEBUG
+  OS_Kill();  // done, OS does not return from a Kill
 } 
 
 
@@ -164,19 +200,27 @@ Debug_Task1
 // Called when SW1 Button pushed
 // Adds another foreground task
 // background threads execute once and return
-/*
 void SW1Release(void){
+#if DEBUG
+  Debug_Task(3);
+#endif //DEBUG
   if(OS_MsTime() > 20){ // debounce
-    if(OS_AddThread(&ButtonWork,100,0)){
+    if(OS_AddThread(&ButtonWork,100,4)){
+#if DEBUG
+  Debug_Task(3);
+#endif //DEBUG
       NumCreated++; 
     }
     OS_ClearMsTime();  // at least 20ms between touches
   }
+#if DEBUG
+  Debug_Task(3);
+#endif //DEBUG
 }
 void SW1Push(void){
   OS_ClearMsTime();
 }
-
+/*
 //************SW2Push*************
 // Called when SW2 Button pushed, Lab 3 only
 // Adds another foreground task
@@ -208,79 +252,87 @@ void SW2Push(void){
 // sends data to the consumer, runs periodically at 400Hz
 // inputs:  none
 // outputs: none
-void Producer(uint16_t data){  
+void Producer(unsigned long data){  
   if(NumSamples < RUNLENGTH){   // finite time run
     NumSamples++;               // number of samples
-    if(OS_Fifo_PutFast(data) == 0){ // send to consumer
+    if(OS_Fifo_Put(data) == 0){ // send to consumer
       DataLost++;
     } 
-    if(count < 100){
-      first100Times[count] = OS_Time();
-      first100Ms[count] = OS_MsTime();
-      firstTypes[count] = 2;
-      count++;
-      calcJitter(0);
-    }  
   } 
-#if OS_DEBUG
-Debug_Task2
-#endif
-
 }
 void Display(void); 
-/*
+
 //******** Consumer *************** 
 // foreground thread, accepts data from producer
 // calculates FFT, sends DC component to Display
 // inputs:  none
 // outputs: none
 const char static * msgStart = "v(mV) = ";
-void adc_done(){
-LCD_MailBox_Send(2, 1, "DONE");}
 void Consumer(void){ 
 unsigned long data,DCcomponent;   // 12-bit raw ADC sample, 0 to 4095
 unsigned long t;                  // time in 2.5 ms
-//unsigned long myId = OS_Id();
+unsigned long myId = OS_Id();
 char message[15]; 
-  char file[8];
-  char countdown[15] = "Done in: ";
-  char *name = "log";
-  uint8_t i;
-  for(i = 0; i < 3; i++){
-    file[i] = name[i];
-  }
-  itoa(getFileCount(), file, 10, 3);
-  eFile_Create(file);
+uint8_t i;
   for(i = 0; i < 8; i++){
     message[i] = msgStart[i];
   }
-  ADC0_InitTimer0ATriggerSeq3(0, 200000, Producer);
-  LCD_MailBox_Send(2, 1, "started");
-  //OS_AddThread(&Display,128,0); 
-  while(NumSamples < RUNLENGTH) {
-#if OS_DEBUG
-Debug_Task3
-#endif    
+  ADC_Collect(5, FS, &Producer); // start ADC sampling, channel 5, PD2, 400 Hz
+  //NumCreated += OS_AddThread(&Display,128,0); 
+  while(NumSamples < RUNLENGTH) { 
+#if DEBUG
+  Debug_Task(4);
+#endif //DEBUG
     for(t = 0; t < 64; t++){   // collect 64 ADC samples
       data = OS_Fifo_Get();    // get from producer
       x[t] = data;             // real part is 0 to 4095, imaginary part is 0
+#if DEBUG
+  Debug_Task(4);
+#endif //DEBUG
     }
     cr4_fft_64_stm32(y,x,64);  // complex FFT of last 64 ADC values
     DCcomponent = y[0]&0xFFFF; // Real part at frequency 0, imaginary part should be zero
     DCcomponent = 3000*DCcomponent/4095;
     itoa(DCcomponent, message, 10, 8);
-    message[11] = '\n';
-    message[12] = '\r';
-    itoa(RUNLENGTH-NumSamples, countdown, 10, 8);
-    //LCD_MailBox_Send(2, 0, message); // called every 2.5ms*64 = 160ms
-    //LCD_MailBox_Send(2, 1, countdown);
-    eFile_WriteFile(file, (char *)message);
+    OS_MailBox_Send(2, 0, message); // called every 2.5ms*64 = 160ms
+#if DEBUG
+  Debug_Task(4);
+#endif //DEBUG
   }
-  adc_done();
-  
   OS_Kill();  // done
 }
-*/
+//******** Display *************** 
+// foreground thread, accepts data from consumer
+// displays calculated results on the LCD
+// inputs:  none                            
+// outputs: none
+void Display(void){
+  Mail data;
+  //ST7735_ds_Message(3,3,"Run length = ",(RUNLENGTH)/FS);   // top half used for Display
+  //while(NumSamples < RUNLENGTH) { 
+#if DEBUG
+  Debug_Task(5);
+#endif //DEBUG
+  while(1){
+    if(OS_MailBox_Count()){
+#if DEBUG
+  Debug_Task(5);
+#endif //DEBUG
+      data = OS_MailBox_Recv();
+      ST7735_ds_SetCursor((data).device, 0, (data).line);
+      ST7735_ds_OutString((data).device, "                    ");
+      ST7735_ds_SetCursor((data).device, 0, (data).line);
+      ST7735_ds_OutString((data).device, (data).message);
+    }
+    else{
+#if DEBUG
+  Debug_Task(5);
+#endif //DEBUG
+      OS_Suspend();
+    }
+  } 
+} 
+
 //--------------end of Task 3-----------------------------
 
 //------------------Task 4--------------------------------
@@ -297,7 +349,7 @@ short Coeff[3];    // PID coefficients
 short Actuator;
 void PID(void){ 
 short err;  // speed error, range -100 to 100 RPM
-//unsigned long myId = OS_Id(); 
+unsigned long myId = OS_Id(); 
   PIDWork = 0;
   IntTerm = 0;
   PrevError = 0;
@@ -306,15 +358,20 @@ short err;  // speed error, range -100 to 100 RPM
   Coeff[2] = 64;    // 0.25 = 64/256 derivative coefficient*
   while(NumSamples < RUNLENGTH) { 
     for(err = -1000; err <= 1000; err++){    // made-up data
-#if OS_DEBUG
-Debug_Task4
-#endif
-
+#if DEBUG
+  Debug_Task(6);
+#endif //DEBUG
       Actuator = PID_stm32(err,Coeff)/256;
     }
     PIDWork++;        // calculation finished
+#if DEBUG
+  Debug_Task(6);
+#endif //DEBUG
   }
   for(;;){ 
+#if DEBUG
+    Debug_Task(6);
+#endif //DEBUG
     OS_Suspend();
   }          // done
 }
@@ -363,17 +420,14 @@ int main(void){
 
   NumCreated = 0 ;
 // create initial foreground threads
-  OS_AddThread(&Interpreter,128,2); 
-  OS_AddThread(&Consumer,128,1); 
-  OS_AddThread(&PID,128,3);  // Lab 3, make this lowest priority
+  NumCreated += OS_AddThread(&Interpreter,128,2); 
+  NumCreated += OS_AddThread(&Consumer,128,1); 
+  NumCreated += OS_AddThread(&PID,128,3);  // Lab 3, make this lowest priority
  
   OS_Launch(TIME_2MS); // doesn't return, interrupts enabled in here
   return 0;            // this never executes
 }
 */
-
-
-
 //+++++++++++++++++++++++++DEBUGGING CODE++++++++++++++++++++++++
 // ONCE YOUR RTOS WORKS YOU CAN COMMENT OUT THE REMAINING CODE
 // 
@@ -386,11 +440,11 @@ int main(void){
 // no switch interrupts
 // no ADC serial port or LCD output
 // no calls to semaphores
-unsigned long Count1 = 0;   // number of times thread1 loops
-unsigned long Count2 = 0;   // number of times thread2 loops
-unsigned long Count3 = 0;   // number of times thread3 loops
-unsigned long Count4 = 0;   // number of times thread4 loops
-unsigned long Count5 = 0;   // number of times thread5 loops
+unsigned long Count1;   // number of times thread1 loops
+unsigned long Count2;   // number of times thread2 loops
+unsigned long Count3;   // number of times thread3 loops
+unsigned long Count4;   // number of times thread4 loops
+unsigned long Count5;   // number of times thread5 loops
 //cooperative
 void Thread1_coop(void){
   Count1 = 0;          
@@ -420,103 +474,87 @@ void Thread3_coop(void){
 //preemptive
 
 void Thread1_pre(void){
-  Count1 = 0;   
+  Count1 = 0;          
   for(;;){
-    //PB2 ^= 0x04;       // heartbeat
+    PB2 ^= 0x04;       // heartbeat
     Count1++;
   }
 }
 void Thread2_pre(void){
   Count2 = 0;          
   for(;;){
-    //PB3 ^= 0x08;       // heartbeat
-    Count2++;
+    PB3 ^= 0x08;       // heartbeat
+    Count2+=2;
   }
 }
 void Thread3_pre(void){
   Count3 = 0;    
   for(;;){
-    //PB4 ^= 0x10;       // heartbeat
-    Count3++;
+    PB4 ^= 0x10;       // heartbeat
+    Count3+=3;
   }
 }
 
-void Thread4_periodic(void){
-  Count4++;
-}
-
-void DummySwitch(void){
-  Count5++;
-}
-
-struct semaphore TestSema;
-
-void SemaTestTake(void){
-  while(1){
-    OS_Wait(&TestSema);
-    OS_Sleep(2);
-    OS_Signal(&TestSema);
-    Count1++;
-  }
-}
-
-void SemaTestInTheWay(void){
-  OS_Sleep(1);
-  while(1){
-    Count2++;
-  }
-}
-
-void SemaTestWant(void){
-  OS_Sleep(1);
-  while(1){
-    OS_Wait(&TestSema);
-    Count3++;
-    OS_Signal(&TestSema);
-  }
-}
-
-int main234(void){
-  OS_InitSemaphore(&TestSema, 1);
-  OS_Init(TIME_2MS);
-  OS_AddThread(SemaTestWant, 0, 0, 1);
-  OS_AddThread(SemaTestInTheWay, 10, 0, 2);
-  OS_AddThread(SemaTestTake, 20, 0, 3);
-  OS_Launch();
+int main22(void){
+  PLL_Init(Bus80MHz);                 // bus clock at 80 MHz
+  OS_Init();          // initialize, disable interrupts
+  ST7735_ds_InitR(INITR_REDTAB, 4, 4, 4, 4);
+  UART_Init(); 
+  PortB_Init();       // profile user threads
+  NumCreated = 0 ;
+  //NumCreated += OS_AddThread(&INTERPRETER_Run,2,1); 
+  
+  
+  SysTick_Init(800);
+  // Count1 Count2 Count3 should be equal or off by one at all times
+  OS_Launch(TIME_2MS);
+  return 0;
 }
 
 /*
 Sorry the main is a mess right now. Port B and LCD code are mutually exclusive.... haha
 */
+void Idle(){
+  while(1){};
+}
 
 int main(void){  // Testmain1 coop
-  OS_EarlyInit();
-  PLL_Init(Bus80MHz);       // set system clock to 50 MHz
-  OS_Init(TIME_1MS*5);
+  
  
+  OS_Init();
   OS_Fifo_Init();
-  LCD_MailBox_Init();
-  
-  OS_AddPeriodicThread(&disk_timerproc, 799999);
-  TIMER5_CTL_R = 0x00000000;
-  
-  OS_Launch(); // doesn't return, interrupts enabled in here
+  OS_MailBox_Init();
+  DataLost = 0;        // lost data between producer and consumer
+  NumSamples = 0;
+  MaxJitter = 0;       // in 1us units
+  OS_AddSW1Task(&SW1Push, &SW1Release, 2);
+  //
+  //INTERPRETER_Run();
+  NumCreated = 0 ;
+  NumCreated += OS_AddThread(&Idle,2,1); 
+  NumCreated += OS_AddThread(&INTERPRETER_Run,2,2);   
+  NumCreated += OS_AddThread(&Display,2,3);  
+  //OS_AddPeriodicThread(&disk_timerproc,7999999,1); //add DAS sampling at 2KHz
+  //NumCreated += OS_AddThread(&Consumer, 2, 4);
+  //OS_AddPeriodicThread(&DAS,40000,1);
+  //NumCreated += OS_AddThread(&Thread2_coop,2,2); 
+  //NumCreated += OS_AddThread(&Thread3_coop,2,3); 
+  // Count1 Count2 Count3 should be equal or off by one at all times
+  OS_LaunchSystem(TIME_2MS); // doesn't return, interrupts enabled in here
   return 0;            // this never executes
 }
-/*
-int main456(void){  // Testmain2 preemptive
+
+int main12(void){  // Testmain2 preemptive
   PLL_Init(Bus80MHz);                 // bus clock at 80 MHz
   OS_Init();          // initialize, disable interrupts
   PortB_Init();       // profile user threads
-  DataLost = 0;  
-  NumSamples = 0 ;
-  OS_AddThread(&Thread1_pre,2,1,NOT_PERIODIC); 
-  OS_AddThread(&Thread2_pre,2,2,NOT_PERIODIC); 
-  OS_AddThread(&Thread3_pre,2,3,NOT_PERIODIC); 
-  OS_AddPeriodicThread(&DAS,PERIOD,1);
-  //OS_AddThread(&ButtonWork,2,4,NOT_PERIODIC);
+  NumCreated = 0 ;
+  NumCreated += OS_AddThread(&Thread1_pre,2,1); 
+  NumCreated += OS_AddThread(&Thread2_pre,2,2); 
+  NumCreated += OS_AddThread(&Thread3_pre,2,3); 
+  NumCreated += OS_AddThread(&ButtonWork,2,4);
   
-  SysTick_Init(8000);
+  SysTick_Init(800);
   // Count1 Count2 Count3 should be equal or off by one at all times
   OS_Launch(TIME_2MS); // doesn't return, interrupts enabled in here
   return 0;            // this never executes
@@ -555,9 +593,9 @@ int Testmain2(void){  // Testmain2
   OS_Init();           // initialize, disable interrupts
   PortB_Init();       // profile user threads
   NumCreated = 0 ;
-  OS_AddThread(&Thread1b,128,1,NOT_PERIODIC); 
-  OS_AddThread(&Thread2b,128,2,NOT_PERIODIC); 
-  OS_AddThread(&Thread3b,128,3,NOT_PERIODIC); 
+  NumCreated += OS_AddThread(&Thread1b,128,1); 
+  NumCreated += OS_AddThread(&Thread2b,128,2); 
+  NumCreated += OS_AddThread(&Thread3b,128,3); 
   // Count1 Count2 Count3 should be equal on average
   // counts are larger than testmain1
  
@@ -591,7 +629,7 @@ void Thread2c(void){
   Count1 = 0;    // number of times signal is called      
   Count2 = 0;    
   Count5 = 0;    // Count2 + Count5 should equal Count1  
-  OS_AddThread(&Thread5c,128,5,NOT_PERIODIC); 
+  NumCreated += OS_AddThread(&Thread5c,128,5); 
   OS_AddPeriodicThread(&BackgroundThread1c,70000,0); 
   for(;;){
     OS_Wait(&Readyc);
@@ -615,7 +653,7 @@ void Thread4c(void){ int i;
   Count4 = 0;
 }
 void BackgroundThread5c(void){   // called when Select button pushed
-  OS_AddThread(&Thread4c,128,5,NOT_PERIODIC); 
+  NumCreated += OS_AddThread(&Thread4c,128,5); 
 }
 void None(){
   
@@ -628,10 +666,10 @@ int main543(void){   // Testmain3
 // Count2 + Count5 should equal Count1
   NumCreated = 0 ;
   OS_AddSW1Task(&BackgroundThread5c, &None, 2);
-  OS_AddThread(&Thread2c,128,2,NOT_PERIODIC); 
-  OS_AddThread(&Thread3c,128,3,NOT_PERIODIC); 
-  OS_AddThread(&Thread4c,128,4,NOT_PERIODIC); 
-  //OS_AddThread(&Thread5c, 128, 5);
+  NumCreated += OS_AddThread(&Thread2c,128,2); 
+  NumCreated += OS_AddThread(&Thread3c,128,3); 
+  NumCreated += OS_AddThread(&Thread4c,128,4); 
+  //NumCreated += OS_AddThread(&Thread5c, 128, 5);
   SysTick_Init(80000);
   OS_Launch(TIME_2MS); // doesn't return, interrupts enabled in here
   return 0;            // this never executes
@@ -683,7 +721,7 @@ void Thread4d(void){ int i;
   OS_Kill();
 }
 void BackgroundThread5d(void){   // called when Select button pushed
-  OS_AddThread(&Thread4d,128,3,NOT_PERIODIC); 
+  NumCreated += OS_AddThread(&Thread4d,128,3); 
 }
 /*
 int Testmain4(void){   // Testmain4
@@ -692,9 +730,9 @@ int Testmain4(void){   // Testmain4
   NumCreated = 0 ;
   OS_AddPeriodicThread(&BackgroundThread1d,PERIOD,0); 
   OS_AddSW1Task(&BackgroundThread5d,2);
-  OS_AddThread(&Thread2d,128,2); 
-  OS_AddThread(&Thread3d,128,3); 
-  OS_AddThread(&Thread4d,128,3); 
+  NumCreated += OS_AddThread(&Thread2d,128,2); 
+  NumCreated += OS_AddThread(&Thread3d,128,3); 
+  NumCreated += OS_AddThread(&Thread4d,128,3); 
   OS_Launch(TIME_2MS); // doesn't return, interrupts enabled in here
   return 0;            // this never executes
 }
@@ -729,7 +767,7 @@ void Thread6(void){  // foreground thread
     PB2 ^= 0x04;        // debugging toggle bit 0  
   }
 }
-/*extern void Jitter(void);   // prints jitter information (write this)
+extern void Jitter(void);   // prints jitter information (write this)
 void Thread7(void){  // foreground thread
   UART_OutString("\n\rEE345M/EE380L, Lab 3 Preparation 2\n\r");
   OS_Sleep(5000);   // 10 seconds        
@@ -755,14 +793,14 @@ void TaskB(void){       // called every pB in background
 
 int Testmain5(void){       // Testmain5 Lab 3
   PortB_Init();
-  OS_Init(TIME_2MS);           // initialize, disable interrupts
+  OS_Init();           // initialize, disable interrupts
   NumCreated = 0 ;
-  OS_AddThread(&Thread6,128,0); 
-  //OS_AddThread(&Thread7,128,0); 
+  NumCreated += OS_AddThread(&Thread6,128,2); 
+  NumCreated += OS_AddThread(&Thread7,128,1); 
   OS_AddPeriodicThread(&TaskA,TIME_1MS,0);           // 1 ms, higher priority
   OS_AddPeriodicThread(&TaskB,2*TIME_1MS,1);         // 2 ms, lower priority
  
-  OS_Launch(); // 2ms, doesn't return, interrupts enabled in here
+  OS_Launch(TIME_2MS); // 2ms, doesn't return, interrupts enabled in here
   return 0;             // this never executes
 }
 
@@ -776,7 +814,7 @@ int Testmain5(void){       // Testmain5 Lab 3
 // second timer interrupts, period established by second call to OS_AddPeriodicThread
 // SW1 no interrupts, 
 // SW2 no interrupts
-struct semaphore s;            // test of this counting semaphore
+Sema4Type s;            // test of this counting semaphore
 unsigned long SignalCount1;   // number of times s is signaled
 unsigned long SignalCount2;   // number of times s is signaled
 unsigned long SignalCount3;   // number of times s is signaled
@@ -832,6 +870,7 @@ void Signal3(void){       // foreground
     OS_Signal(&s);
     SignalCount3++;
   }
+  OS_Kill();
 }
 
 long add(const long n, const long m){
@@ -839,10 +878,9 @@ static long result;
   result = m+n;
   return result;
 }
-
-int main7245(void){      // Testmain6  Lab 3
+int Testmain6(void){      // Testmain6  Lab 3
   volatile unsigned long delay;
-  OS_Init(TIME_2MS);           // initialize, disable interrupts
+  OS_Init();           // initialize, disable interrupts
   delay = add(3,4);
   PortB_Init();
   SignalCount1 = 0;   // number of times s is signaled
@@ -855,16 +893,17 @@ int main7245(void){      // Testmain6  Lab 3
   OS_AddPeriodicThread(&Signal1,(799*TIME_1MS)/1000,0);   // 0.799 ms, higher priority
   OS_AddPeriodicThread(&Signal2,(1111*TIME_1MS)/1000,1);  // 1.111 ms, lower priority
   NumCreated = 0 ;
-  OS_AddThread(&OutputThread,0,0); 	// results output thread
-  OS_AddThread(&Signal3,1,0); 	// signalling thread
-  OS_AddThread(&Wait1,2,0); 	// waiting thread
-  OS_AddThread(&Wait2,3,0); 	// waiting thread
-  OS_AddThread(&Wait3,4,0); 	// waiting thread
+  NumCreated += OS_AddThread(&Thread6,128,6);    	// idle thread to keep from crashing
+  NumCreated += OS_AddThread(&OutputThread,128,2); 	// results output thread
+  NumCreated += OS_AddThread(&Signal3,128,2); 	// signalling thread
+  NumCreated += OS_AddThread(&Wait1,128,2); 	// waiting thread
+  NumCreated += OS_AddThread(&Wait2,128,2); 	// waiting thread
+  NumCreated += OS_AddThread(&Wait3,128,2); 	// waiting thread
  
-  OS_Launch();  // 1ms, doesn't return, interrupts enabled in here
+  OS_Launch(TIME_1MS);  // 1ms, doesn't return, interrupts enabled in here
   return 0;             // this never executes
 }
-/*
+
 
 //******************* Lab 3 Measurement of context switch time**********
 // Run this to measure the time it takes to perform a task switch
@@ -885,7 +924,7 @@ int Testmain7(void){       // Testmain7
   PortB_Init();
   OS_Init();           // initialize, disable interrupts
   NumCreated = 0 ;
-  OS_AddThread(&Thread8,128,2); 
+  NumCreated += OS_AddThread(&Thread8,128,2); 
   OS_Launch(TIME_1MS/10); // 100us, doesn't return, interrupts enabled in here
   return 0;             // this never executes
 }

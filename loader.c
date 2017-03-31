@@ -90,6 +90,7 @@ typedef struct {
 
 #endif
 
+ELFEnv_t env;
 typedef enum {
   FoundERROR = 0,
   FoundSymTab = (1 << 0),

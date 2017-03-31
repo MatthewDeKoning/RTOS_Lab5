@@ -58,6 +58,9 @@ typedef struct {
   void *ptr; /*!< Pointer of symbol in memory */
 } ELFSymbol_t;
 
+typedef ELFSymbol_t EST;
+
+
 /**
  * Environment for execution
  */
@@ -65,6 +68,8 @@ typedef struct {
   const ELFSymbol_t *exported; /*!< Pointer to exported symbols array */
   unsigned int exported_size; /*!< Elements on exported symbol array */
 } ELFEnv_t;
+extern ELFEnv_t env;
+
 
 /**
  * Execute ELF file from "path" with environment "env"

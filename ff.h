@@ -16,7 +16,7 @@
 
 #ifndef _FATFS
 #define _FATFS  80376  /* Revision ID */
-
+#define VALVANOWEAR
 #ifdef __cplusplus
 extern "C" {
 #endif

@@ -23,19 +23,28 @@
  http://users.ece.utexas.edu/~valvano/
  */
 
-#ifndef _SWITCH
-#define _SWITCH
-
-#include <stdint.h>
-
 // PF4 connected to a negative logic switch using internal pull-up (trigger on both edges)
 // Initialize switch interface on PF4 
 // Inputs:  pointer to a function to call on touch (falling edge),
 //          pointer to a function to call on release (rising edge)
 // Outputs: none 
-void Switch_Init();
+void Switch_Init(void(*touchtask)(void), void(*releasetask)(void));
 
-// Use enums to indicate which switch, and at which state, a function should be run
-// Left switch is PB3          Middle switch is PC6           Right switch is PF4
-void Switch_AddSwitchTask(uint8_t switchNumber, uint8_t PressOrRelease, void(*task)(void));
-#endif
+// Wait for switch to be pressed 
+// There will be minimum time delay from touch to when this function returns
+// Inputs:  none
+// Outputs: none 
+void Switch_WaitPress(void);
+
+// Wait for switch to be released 
+// There will be minimum time delay from release to when this function returns
+// Inputs:  none
+// Outputs: none 
+void Switch_WaitRelease(void);
+
+// Return current value of the switch 
+// Repeated calls to this function may bounce during touch and release events
+// If you need to wait for the switch, use WaitPress or WaitRelease
+// Inputs:  none
+// Outputs: false if switch currently pressed, true if released 
+unsigned long Switch_Input(void);

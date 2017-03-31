@@ -94,32 +94,11 @@
 
 // ***********************Includes**************************
 #include <stdio.h>
-#include <string.h>
 #include <stdint.h>
 #include "ST7735.h"
-#include "os.h"
-#include "eDisk.h"
 #include "../inc/tm4c123gh6pm.h"
 
 // ***********************Defines***************************
-#define SDC_CS_PB0 1
-#define SDC_CS_PD7 0
-#if SDC_CS_PD7
-// CS is PD7  
-// to change CS to another GPIO, change SDC_CS and CS_Init
-#define SDC_CS   (*((volatile unsigned long *)0x40007200)) 
-#define SDC_CS_LOW       0           // CS controlled by software
-#define SDC_CS_HIGH      0x80  
-
-#endif
-#if SDC_CS_PB0
-// CS is PB0
-// to change CS to another GPIO, change SDC_CS and CS_Init
-#define SDC_CS   (*((volatile unsigned long *)0x40005004)) 
-#define SDC_CS_LOW       0           // CS controlled by software
-#define SDC_CS_HIGH      0x01  
-#endif
-
 #define ST7735_NOP     0x00
 #define ST7735_SWRESET 0x01
 #define ST7735_RDDID   0x04
@@ -253,6 +232,7 @@
 #define MADCTL_MH  0x04
 
 #define MAX_UINT16 0xFFFF
+
 // ***********************Globals***************************
 // standard ascii 5x7 font
 // originally from glcdfont.c from Adafruit project
@@ -693,8 +673,6 @@ uint32_t StX=0; // position along the horizonal axis 0 to 20
 uint32_t StY=0; // position along the vertical axis 0 to 15
 uint16_t StTextColor = ST7735_YELLOW;
 
-char volatile static CurrentScreen[320];
-
 // for dual screen
 uint16_t static xstart[4];     //pixels
 uint16_t static xstop[4];      //pixels
@@ -724,75 +702,6 @@ void static fillmessage(uint32_t n);
 
 
 // *****************Function Implementations****************
-
-//******** Display *************** 
-// foreground thread, accepts data from consumer
-// displays calculated results on the LCD
-// inputs:  none                            
-// outputs: none
-void LCD_Run(void){uint8_t len;
-  struct LCDMailboxMsg data;
-  //ST7735_ds_Message(3,3,"Run length = ",(RUNLENGTH)/FS);   // top half used for Display
-  //while(NumSamples < RUNLENGTH) { 
-  while(1){
-    if(LCD_MailBox_Count()){
-      data = LCD_MailBox_Recv();
-      ST7735_ds_SetCursor((data).device, 0, (data).line);
-      len = ST7735_ds_OutString((data).device, (data).message);
-      for(int i = 0; i < (20-len); i++){
-        ST7735_ds_OutString((data).device, " ");
-      }
-    }
-    else{
-      OS_DisableLCD();
-    }
-  } 
-} 
-
-char static CurrentScreen_Get(int8_t device){
-  int y = ds_StY[device];
-  int x = ds_StX[device];
-  return CurrentScreen[x+(y*20)];
-}
-
-void static CurrentScreen_Set(int8_t device, char a){
-  int y = ds_StY[device];
-  int x = ds_StX[device];
-  CurrentScreen[x+(y*20)] = a;
-}
-
-void static CurrentScreen_Clear(void){
-  for(int i = 0; i < 320; i++){
-    CurrentScreen[i] = 0;
-  }
-}
-
-//------------ST7735_ds_OutString------------
-// 
-// Input: device int, char* to a string
-// Output: string output to cursor location of device 
-int ST7735_ds_OutString(int8_t device, char *ptr){
-  int len = 0;
-  while(*ptr){
-#if ~LCD_OPTIMIZATION
-    ST7735_ds_OutChar(device, *ptr);
-    len++;
-    ptr = ptr + 1;
-#endif
-#if LCD_OPTIMIZATION
-    if(CurrentScreen_Get(device) != *ptr){
-      CurrentScreen_Set(device,*ptr);
-      ST7735_ds_OutChar(device, *ptr);
-    }else{
-      ds_StX[device]++;
-    }
-    len++;
-    ptr = ptr + 1;
-#endif
-  }
-  return len;
-}
-
 
 /*Some thoughts: while all of his function prototypes claim to accept "row, column" x and y values
   the drawCharS, drawRect, VLine, and HLine functions seem to take pixel values. I am positive the 
@@ -979,7 +888,6 @@ void ST7735_ds_DrawFastHLine(int8_t device, int16_t x, int16_t y, int16_t w, uin
 // Output: 
 void ST7735_ds_FillScreen(int8_t device, uint16_t color){
   ST7735_ds_FillRect(device, 0, 0, _width, (ystop[device] - ystart[device]), color);
-  CurrentScreen_Clear();
 }
 
 
@@ -1182,6 +1090,17 @@ void ST7735_ds_OutChar(int8_t device, char ch){
   return;
 }
 
+
+//------------ST7735_ds_OutString------------
+// 
+// Input: device int, char* to a string
+// Output: string output to cursor location of device 
+void ST7735_ds_OutString(int8_t device, char *ptr){
+  while(*ptr){
+    ST7735_ds_OutChar(device, *ptr);
+    ptr = ptr + 1;
+  }
+}
 
 
 //------------ST7735_ds_SetTextColor------------
@@ -1916,16 +1835,15 @@ void ST7735_OutString(char *ptr){
 void ST7735_SetTextColor(uint16_t color){
   StTextColor = color;
 }
-/*
 // Print a character to ST7735 LCD.
 int fputc(int ch, FILE *f){
   ST7735_OutChar(ch);
   return 1;
-}*/
+}
 // No input from Nokia, always return data.
-/*int fgetc (FILE *f){
+int fgetc (FILE *f){
   return 0;
-}*/
+}
 // Function called when file error occurs.
 int ferror(FILE *f){
   /* Your implementation of ferror */
@@ -1974,33 +1892,22 @@ void static fillmessage(uint32_t n){
 // and then adds the data to the transmit FIFO.
 // NOTE: These functions will crash or stall indefinitely if
 // the SSI0 module is not initialized and enabled.
-  volatile uint32_t response;
-void static writecommand(unsigned char c) {   
-  OS_Wait(&SPI);      // wait until SSI0 not busy/transmit FIFO empty
+void static writecommand(uint8_t c) {
+                                        // wait until SSI0 not busy/transmit FIFO empty
   while((SSI0_SR_R&SSI_SR_BSY)==SSI_SR_BSY){};
-  SDC_CS = SDC_CS_HIGH;
-  TFT_CS = TFT_CS_LOW;
   DC = DC_COMMAND;
-  SSI0_DR_R = c;                        // data out
-  while((SSI0_SR_R&SSI_SR_RNE)==0){};   // wait until response
-  TFT_CS = TFT_CS_HIGH;
-  response = SSI0_DR_R;                 // acknowledge response
-  OS_Signal(&SPI);    
+  SSI0_DR_R = c;                        // data out THIS LINE CAUSES THE HARD FAULT, SETTINGS MAGICALLY LEAVE????
+  //In the above comments it states this will cause a crash if ssio is not initialized and enabled
+  //somehow it is becoming disabled in between initialization and the thread running
+                                        // wait until SSI0 not busy/transmit FIFO empty
+  while((SSI0_SR_R&SSI_SR_BSY)==SSI_SR_BSY){};
 }
 
 
-void static writedata(unsigned char c) {
-  volatile uint32_t response;
-  OS_Wait(&SPI);                                      // wait until SSI0 not busy/transmit FIFO empty
-  while((SSI0_SR_R&SSI_SR_BSY)==SSI_SR_BSY){};
-  SDC_CS = SDC_CS_HIGH;
-  TFT_CS = TFT_CS_LOW;
+void static writedata(uint8_t c) {
+  while((SSI0_SR_R&SSI_SR_TNF)==0){};   // wait until transmit FIFO not full
   DC = DC_DATA;
   SSI0_DR_R = c;                        // data out
-  while((SSI0_SR_R&SSI_SR_RNE)==0){};   // wait until response
-  TFT_CS = TFT_CS_HIGH;
-  response = SSI0_DR_R;                 // acknowledge response
-  OS_Signal(&SPI);    
 }
 // Subroutine to wait 1 msec
 // Inputs: None
@@ -2044,12 +1951,13 @@ void static commandList(const uint8_t *addr) {
 
 
 // Initialization code common to both 'B' and 'R' type displays
-void static commonInit(const unsigned char *cmdList) {
+void static commonInit(const uint8_t *cmdList) {
+  volatile uint32_t delay;
   ColStart  = RowStart = 0; // May be overridden in init func
-  CS_Init();
+
   SYSCTL_RCGCSSI_R |= 0x01;  // activate SSI0
   SYSCTL_RCGCGPIO_R |= 0x01; // activate port A
-  while((SYSCTL_PRGPIO_R&0x01)==0){};
+  while((SYSCTL_PRGPIO_R&0x01)==0){}; // allow time for clock to start
 
   // toggle RST low to reset; CS low so it'll listen to us
   // SSI0Fss is temporarily used as GPIO
@@ -2068,18 +1976,22 @@ void static commonInit(const unsigned char *cmdList) {
   Delay1ms(500);
 
   // initialize SSI0
-  GPIO_PORTA_AFSEL_R |= 0x34;           // enable alt funct on PA2,4,5
-  GPIO_PORTA_DEN_R |= 0x34;             // enable digital I/O on PA2,4,5
-                                        // configure PA2,4,5 as SSI
+  GPIO_PORTA_AFSEL_R |= 0x2C;           // enable alt funct on PA2,3,5
+  GPIO_PORTA_DEN_R |= 0x2C;             // enable digital I/O on PA2,3,5
+                                        // configure PA2,3,5 as SSI
   GPIO_PORTA_PCTL_R = (GPIO_PORTA_PCTL_R&0xFF0F00FF)+0x00202200;
-  GPIO_PORTA_AMSEL_R &= ~0x34;          // disable analog functionality on PA2,4,5
+  GPIO_PORTA_AMSEL_R &= ~0x2C;          // disable analog functionality on PA2,3,5
   SSI0_CR1_R &= ~SSI_CR1_SSE;           // disable SSI
   SSI0_CR1_R &= ~SSI_CR1_MS;            // master mode
-                                        // clock divider for 10 MHz SSIClk (assumes 80 MHz PIOSC)
-  SSI0_CPSR_R = (SSI0_CPSR_R&~SSI_CPSR_CPSDVSR_M)+8; 
-  // CPSDVSR must be even from 2 to 254
-  
-  SSI0_CR0_R &= ~(SSI_CR0_SCR_M |       // SCR = 0 (80 Mbps base clock)
+                                        // configure for system clock/PLL baud clock source
+  SSI0_CC_R = (SSI0_CC_R&~SSI_CC_CS_M)+SSI_CC_CS_SYSPLL;
+//                                        // clock divider for 3.125 MHz SSIClk (50 MHz PIOSC/16)
+//  SSI0_CPSR_R = (SSI0_CPSR_R&~SSI_CPSR_CPSDVSR_M)+16;
+                                        // clock divider for 8 MHz SSIClk (80 MHz PLL/24)
+                                        // SysClk/(CPSDVSR*(1+SCR))
+                                        // 80/(10*(1+0)) = 8 MHz (slower than 4 MHz)
+  SSI0_CPSR_R = (SSI0_CPSR_R&~SSI_CPSR_CPSDVSR_M)+10; // must be even number
+  SSI0_CR0_R &= ~(SSI_CR0_SCR_M |       // SCR = 0 (8 Mbps data rate)
                   SSI_CR0_SPH |         // SPH = 0
                   SSI_CR0_SPO);         // SPO = 0
                                         // FRF = Freescale format
@@ -2090,7 +2002,6 @@ void static commonInit(const unsigned char *cmdList) {
 
   if(cmdList) commandList(cmdList);
 }
-
 
 // Set the region of the screen RAM to be modified
 // Pixel colors are sent left to right, top to bottom

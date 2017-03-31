@@ -112,8 +112,6 @@ enum initRFlags{
 #define ST7735_YELLOW  0x07FF
 #define ST7735_WHITE   0xFFFF
 
-void LCD_Run(void);
-extern struct semaphore SPI;
 //------------ST7735_ds_InitB------------
 // Initialization for ST7735R screens (green or red tabs).
 // Input: screenZeroNumLines   number of lines in screen Zero  
@@ -365,7 +363,7 @@ void ST7735_ds_OutChar(int8_t device, char ch);
 // The string will not automatically wrap.
 // inputs: ptr  pointer to NULL-terminated ASCII string
 // outputs: none
-int ST7735_ds_OutString(int8_t device, char *ptr);
+void ST7735_ds_OutString(int8_t device, char *ptr);
 
 // ************** ST7735_ds_SetTextColor ************************
 // Sets the color in which the characters will be printed

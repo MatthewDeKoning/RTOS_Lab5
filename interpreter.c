@@ -1,10 +1,14 @@
 #include "string.h"
 #include "interpreter.h"
+#include "ADCT2ATrigger.h"
 #include "ST7735.h"
+#include "Timer4A.h"
+#include "SysTick.h"
 //#include "Clock.h"
 #include "UART.h"
-#include "os.h"
-#include "ff.h"
+#include "OS.h"
+#include "loader.h"
+
 static char strArray[ROWS][COLS];
 
 int8_t interpreter_line = 0;
@@ -12,171 +16,42 @@ int8_t interpreter_device = 0;
 char interpreter_msg[21];
 /* the error message when an invalid command was passed */
 const char static * errorMsg = "Invalid Command";
-const static char * messageOne = "MS: ";
-const static char * messageTwo = "Clk Cycles: ";
+
 static char string[100];
-char msg1[100];
-char msg2[100];
-char *msgs[4]; 
-char * out0 = "mystery";
-char * out1 = "periodic task complete";
-char * out2 = "periodic task enabled";
-char * out3 = "thread switch";
-char num[4];
-void printDiagnostics(){
-  uint32_t * times, * ms, *types;
-  int  j;
-  msgs[0] = out0;
-  msgs[1] = out1;
-  msgs[2] = out2;
-  msgs[3] = out3;
-  
-  times = getTimes();
-  ms = getMS();
-  types = getTypes();
-  for(j = 0; j < 4; j++){ msg1[j] = messageOne[j];}
-  for(j = 0; j < 12; j++){ msg2[j] = messageTwo[j];}
-  for(j = 0; j < 100; j++){
-    itoa(j, num, 10, 0);
-    UART_OutString(num);
-    UART_OutString("  ");
-    itoa(ms[j], msg1, 10, 4);
-    UART_OutString(msg1);
-    UART_OutString("  ");
-    itoa(times[j], msg2, 10, 12);
-    UART_OutString(msg2);
-    UART_OutString("  ");
-    UART_OutString(msgs[types[j]]);
-    OutCRLF();
-  }
-}
 
-void printMaxDI(void){
-  int out = 0;//OS_MaxTimeDI();
-  UART_OutString("Max Time with Interrupts disabled ");
-  UART_OutUDec(out);
-  OutCRLF();
-}
-/*
-static void print_file(char file[]){
-  int size, i;
-  char * ptr;
-  size = eFile_ROpen(file, &ptr);
-  while(size != 0){
-    for(i = 0; i < size; i++){
-      
-      UART_OutChar(*ptr);
-      ptr++;
-      
-    }
-    size = eFile_ReadNext(&ptr);
-  }
-}
+EST symbol_table;
+ELFEnv_t environment;
 
-static void print_dir(){
-  char * ptr, * temp;
-  char str[8];
-  int j;
-  uint32_t test;
-  ptr = eFile_Directory();
-  ptr+=6;
-  temp = ptr;
-  j = 0;
-  while((*ptr) != '\0'){
-    temp = ptr;
-    while(temp != '\0' && j < 7){
-      str[j] = *temp++;
-      j++;
-    }
-    str[j] = '\0';
-    j = 0;
-    UART_OutString("File: ");
-    UART_OutString(str);
-    UART_OutChar('\n');
-    UART_OutChar('\r');
-    UART_OutString("Starting sector: ");
-    UART_OutUDec((*(ptr+8)<<8) + *(ptr+9));
-    UART_OutChar('\n');
-    UART_OutChar('\r');
-    UART_OutString("Size (Bytes): ");
-    
-    test = 0;
-    test+= *(ptr+13)&0xFF;
-    test+= (unsigned)(*(ptr+12)<<8)&0xFF00;
-    test+= (unsigned)(*(ptr+11)<<16)&0xFF0000;
-    test+= (unsigned)(*(ptr+10)<<24)&0xFF000000;
-    UART_OutUDec(test);
-    UART_OutChar('\n');
-    UART_OutChar('\r');
-    UART_OutChar('\n');
-    UART_OutChar('\r');
-    ptr+=14;
-  }
-}
-*/
 //The function to run as interpreter thread
 void INTERPRETER_Run(){
   while(1){
 #if DEBUG
     Debug_Task(7);
 #endif //DEBUG
-
+    symbol_table.name = "Display_Message";
+    symbol_table.ptr = &ST7735_ds_Message;
+    environment.exported = &symbol_table;
+    environment.exported_size = 1;
+    
     UART_OutString(">");
-    //OS_DisableInterpreter();
     UART_InString(string, 99);
     INTERPRETER_parseMessage(string);
     OutCRLF();
     if(interpreter_device == -1){
       if(interpreter_line == -2){
-        printDiagnostics();
-      }
-      else if(interpreter_line == -3){
-        printMaxDI();
-      }
-      else if(interpreter_line == -4){ //dir
-        //print_dir();
-      }
-      else if(interpreter_line == -5){ //format
-        //f_mkfs(args);
-      }
-      else if(interpreter_line == -6){ //prnt file
-        //print_file(strArray[1]);
-      }
-      else if(interpreter_line == -7){ // delete file
-        //eFile_Delete(strArray[1]);
-        
-      }
-      else if(interpreter_line == -8){ //create file
-        //if(eFile_Create(strArray[1]) >= 0){
-          //UART_OutString("Success\n");
-        //}
-        //el/se{
-          //UART_OutString("Failure\n");
-        //}
-        
-      }
-      else if(interpreter_line == -9){
-        /*if(eFile_WOpen(strArray[1]) == 0){
-          UART_OutString("File Open\n");
-        }
-        else{
-          UART_OutString("No such file");
-        }*/
-      }
-      else if(interpreter_line == -10){
-        /*if(eFile_WriteString(strArray[1]) !=0){
-          UART_OutString("Write Error");
-        }*/
-      }
-      else if(interpreter_line == -11){
-        //eFile_WClose();
+        //exec elf!
+        DisableSysTick();
+        exec_elf("Proc.axf", &environment);
+        EnableSysTick();
       }
       else{
         UART_OutString(interpreter_msg);
       }
     }
     else{
-      LCD_MailBox_Send(interpreter_device, interpreter_line, interpreter_msg);
+      //UART_OutString(interpreter_msg);
+      //if you want to check out the crash, uncomment the line above
+      OS_MailBox_Send(interpreter_device, interpreter_line, interpreter_msg);
     }
     OutCRLF();
   }
@@ -288,34 +163,7 @@ void INTERPRETER_parseMessage(char* str){
       //itoa(OS_ShortRunTime(), interpreter_msg, 10, 7);
       break;
     case 15:
-       interpreter_line = -2;
-       break;
-    case 16:
-      interpreter_line = -3;
-      break;
-    case 17:
-      interpreter_line = -4; //dir
-      break;
-    case 18:
-      interpreter_line = -5; //format
-      break;
-    case 19:
-      interpreter_line = -6; //print file
-      break;
-    case 20:
-      interpreter_line = -7; //delete file
-      break;
-    case 21:
-      interpreter_line = -8;
-      break;
-    case 22:
-      interpreter_line = -9;
-      break;
-    case 23:
-      interpreter_line = -10;
-      break;
-    case 24:
-      interpreter_line = -11;
+      interpreter_line = -2;
       break;
     default:
       for(i = 0; i < LengthOfString(errorMsg); i++){
@@ -401,21 +249,9 @@ uint8_t INTERPRETER_handleCommand(uint8_t index){
     return 1;
   }
   switch (LengthOfString(strArray[0]) - index){
-    case 2:
-        if(strArray[0][index] == 'j' && strArray[0][index+1] == 't'){
-          return 16;
-        }
-        return 0xff;
-        break;
     case 3:
       if(strArray[0][index] == 'a' && strArray[0][index+1] == 'd' && strArray[0][index+2] == 'c'){
         return 2;
-      }
-      else if(strArray[0][index] == 'd' && strArray[0][index+1] == 'i' && strArray[0][index+2] == 'r'){
-        return 17;
-      }
-      else if(strArray[0][index] == 'd' && strArray[0][index+1] == 'e' && strArray[0][index+2] == 'l'){
-        return 20;
       }
       return 0xff;
     case 4:
@@ -425,13 +261,6 @@ uint8_t INTERPRETER_handleCommand(uint8_t index){
       else if(strArray[0][index] == 't' && strArray[0][index+1] == 'i' && strArray[0][index+2] == 'm' && strArray[0][index+3] == 'e'){
         return 7;
       }
-      else if(strArray[0][index] == 'o' && strArray[0][index+1] == 'u' && strArray[0][index+2] == 't' && strArray[0][index+3] == 'f'){
-        return 19;
-      }
-      else if(strArray[0][index] == 'o' && strArray[0][index+1] == 'p' && strArray[0][index+2] == 'e' && strArray[0][index+3] == 'n'){
-        return 22;
-      }
-      
       return 0xff;
     case 5:
       if(strArray[0][index] == 'p' && strArray[0][index+1] == 'r' && strArray[0][index+2] == 'i' && strArray[0][index+3] == 'n' && strArray[0][index+4] == 't'){
@@ -440,25 +269,13 @@ uint8_t INTERPRETER_handleCommand(uint8_t index){
       else if(strArray[0][index] == 'a' && strArray[0][index+1] == 'd' && strArray[0][index+2] == 'c' && strArray[0][index+3] == 'o' && strArray[0][index+4] == 'n'){
         return 6;
       }
-      else if(strArray[0][index] == 'w' && strArray[0][index+1] == 'r' && strArray[0][index+2] == 'i' && strArray[0][index+3] == 't' && strArray[0][index+4] == 'e'){
-        return 23;
-      }
-      else if(strArray[0][index] == 'c' && strArray[0][index+1] == 'l' && strArray[0][index+2] == 'o' && strArray[0][index+3] == 's' && strArray[0][index+4] == 'e'){
-        return 24;
-      }
       return 0xff;
     case 6:
       if(strArray[0][index] == 's' && strArray[0][index+1] == 'c' && strArray[0][index+2] == 'r' && strArray[0][index+3] == 'e' && strArray[0][index+4] == 'e'&& strArray[0][index+5] == 'n'){
         return 5;
       }
-      else if(strArray[0][index] == 'a' && strArray[0][index+1] == 'd' && strArray[0][index+2] == 'c' && strArray[0][index+3] == 'o' && strArray[0][index+4] == 'f'&& strArray[0][index+5] == 'f'){
+      if(strArray[0][index] == 'a' && strArray[0][index+1] == 'd' && strArray[0][index+2] == 'c' && strArray[0][index+3] == 'o' && strArray[0][index+4] == 'f'&& strArray[0][index+5] == 'f'){
         return 6;
-      }
-      else if(strArray[0][index] == 'f' && strArray[0][index+1] == 'o' && strArray[0][index+2] == 'r' && strArray[0][index+3] == 'm' && strArray[0][index+4] == 'a'&& strArray[0][index+5] == 't'){
-        return 18;
-      }
-      else if(strArray[0][index] == 'c' && strArray[0][index+1] == 'r' && strArray[0][index+2] == 'e' && strArray[0][index+3] == 'a' && strArray[0][index+4] == 't'&& strArray[0][index+5] == 'e'){
-        return 21;
       }
       return 0xff;
     case 7:
@@ -470,6 +287,9 @@ uint8_t INTERPRETER_handleCommand(uint8_t index){
       }
       else if(strArray[0][index] == 'r' && strArray[0][index+1] == 'u' && strArray[0][index+2] == 'n' && strArray[0][index+3] == 't' && strArray[0][index+4] == 'i'&& strArray[0][index+5] == 'm' && strArray[0][index+6] == 'e'){
         return 3;
+      }
+      else if(strArray[0][index] == 'e' && strArray[0][index+1] == 'x' && strArray[0][index+2] == 'e' && strArray[0][index+3] == 'c' && strArray[0][index+4] == 'e'&& strArray[0][index+5] == 'l' && strArray[0][index+6] == 'f'){
+        return 15;
       }
       return 0xff;
     case 8:
@@ -485,11 +305,9 @@ uint8_t INTERPRETER_handleCommand(uint8_t index){
       else if(strArray[0][index] == 'r' && strArray[0][index+1] == 'u' && strArray[0][index+2] == 'n' && strArray[0][index+3] == 't' && strArray[0][index+4] == 'i'&& strArray[0][index+5] == 'm' && strArray[0][index+6] == 'e' && strArray[0][index+7] == 's'){
         return 14;
       }
+       
       return 0xff;
-    case 11:
-      if(strArray[0][index] == 'd' && strArray[0][index+1] == 'i' && strArray[0][index+2] == 'a' && strArray[0][index+3] == 'g' && strArray[0][index+4] == 'n'&& strArray[0][index+5] == 'o' && strArray[0][index+6] == 's' && strArray[0][index+7] == 't'&& strArray[0][index+8] == 'i'&& strArray[0][index+9] == 'c'&& strArray[0][index+10] == 's'){
-        return 15;
-      }
+      
     default:
       return 0xff;
   }
