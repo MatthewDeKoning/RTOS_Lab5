@@ -12,8 +12,10 @@
 
         EXTERN  RunPt            ; currently running thread
         EXTERN  NextPt           ; thread to run next
+        EXTERN  SV_Funcs
         EXPORT  OS_Launch
         EXPORT  PendSV_Handler
+        EXPORT  SVC_Handler
        
 
 
@@ -64,6 +66,28 @@ PendSV_Handler
   POP {R4-R11}    ; Load new registers
   CPSIE I         ; Re-enable interrupts
   BX LR           ; Resume new task
+ 
+SVC_Handler
+  LDR  R12, [SP, #24]
+  LDRH R12, [R12, #-2]
+  BIC  R12, #0xFF00
+  LDM  SP, {R0, R3}
+  PUSH {R4}
+  PUSH {R11}
+  PUSH {LR}
+  LDR  R4, =SV_Funcs
+  LDR  R4, [R4]
+  LSL  R11, R12, #2;
+  ADD  R4, R4, R11;
+  LDR  R4, [R4]
+  MOV  LR, PC
+  ADD  LR, LR, #4
+  BX   R4
+  POP  {LR}
+  POP  {R11}
+  POP  {R4}
+  STR  R0, [SP]
+  BX   LR
   
   ALIGN
   END

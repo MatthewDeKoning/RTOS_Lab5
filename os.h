@@ -133,7 +133,7 @@ typedef void(entry_t)(void);
 /*                      OS OBJECTS                      */
 /* ---------------------------------------------------- */
 
-
+extern uint8_t (**SV_Funcs)(void);
 enum uint8_t{
   screen0, screen1, screen2, screen3
 };

@@ -29,6 +29,13 @@ static uint8_t OS_FIFO_Index;
 static Sema4Type FIFO_Free;
 static Sema4Type FIFO_Valid;
 
+uint8_t (*SV_0)(void) = &OS_Id; 
+void (*SV_1)(void) = &OS_Kill;
+void (*SV_2)(unsigned long) = &OS_Sleep;
+unsigned long (*SV_3)(void) = &OS_MsTime;
+int (*SV_4)(void(void), uint8_t, uint8_t ) = &OS_AddThread;
+uint8_t (**SV_Funcs)(void) = &SV_0;
+
 AddIndexFifo(OS, FIFOSIZE, unsigned long, FIFOSUCCESS, FIFOFAIL)
 
 AddIndexFifo(POSTOFFICE, POSTOFFICESIZE, Mail, FIFOSUCCESS, FIFOFAIL);
@@ -213,7 +220,7 @@ void OS_Kill(void){
   RunPt->id = 0;
   
   //call os suspend to context switch to the next tasks
-  OS_Suspend();
+  //OS_Suspend();
 }
 int OS_AddSW1Task(void(*pushTask)(void), void(*pullTask)(void), unsigned long priority){
   Switch_Init(pushTask, pullTask);

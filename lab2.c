@@ -517,13 +517,32 @@ int main22(void){
 Sorry the main is a mess right now. Port B and LCD code are mutually exclusive.... haha
 */
 void Idle(){
+   __asm{
+    SVC #0
+  }
   while(1){};
 }
 
 
 int main(void){  // Testmain1 coop
-  
- 
+ /* __asm{
+    MOV R0, #0
+    MOV R1, #1 //
+    MOV R2, #2 // 
+    MOV R3, #3 //
+    MOV R4, #4 //
+    MOV R5, #5 //
+    MOV R6, #6 //
+    MOV R7, #7 //
+    MOV R8, #8 //
+    MOV R9, #9  // 
+    MOV R10, #10 // 
+    MOV R11, #11 //
+    MOV R12, #12 //
+    SVC #1 //
+  }
+  while(1){};*/
+
   OS_Init();
   OS_Fifo_Init();
   OS_MailBox_Init();
