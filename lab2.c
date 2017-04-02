@@ -513,35 +513,63 @@ int main22(void){
   return 0;
 }
 
+void thread(void)
+{
+	unsigned int id;
+	
+	id = OS_Id();
+	//PF3 ^= 0x08;
+	ST7735_ds_Message(0,2, "Thread: ", id);
+	OS_Sleep(2000);
+	ST7735_ds_Message(0,3, "Thread dying ", id);
+	//PF3 ^= 0x08;
+	OS_Kill();
+}
+
+int process(void)
+{
+	unsigned int id;
+	unsigned long time;
+	
+	id = OS_Id();
+	//PF2 ^= 0x04;
+	ST7735_ds_Message(0,0, "Hello world: ", id);
+	//OS_AddThread(thread, 128, 1);
+  //stack size, priority
+  OS_AddThread(&thread, 1, 3);
+  time = OS_MsTime();
+	OS_Sleep(1000);
+	time = (((OS_MsTime()-time)/1000ul)*125ul)/10000ul;
+	ST7735_ds_Message(0,1, "Sleep time: ", time);
+	//PF2 ^= 0x04;
+	OS_Kill();
+}
+
 /*
 Sorry the main is a mess right now. Port B and LCD code are mutually exclusive.... haha
 */
 void Idle(){
-   __asm{
-    SVC #0
+  /*int trigger, flag;
+  trigger = 0;flag = 0;
+  long sr;
+   //__asm{
+   // SVC #4
+  //}
+  while(1){
+    if(flag == 0){
+    trigger++;
+    if(trigger > 0x000FFFFF){
+      flag =1;
+      sr = OS_LockScheduler();
+      OS_AddProcess(&process, 0, 0, 0, 0, sr);
+    }
   }
+  }*/
   while(1){};
 }
 
 
 int main(void){  // Testmain1 coop
- /* __asm{
-    MOV R0, #0
-    MOV R1, #1 //
-    MOV R2, #2 // 
-    MOV R3, #3 //
-    MOV R4, #4 //
-    MOV R5, #5 //
-    MOV R6, #6 //
-    MOV R7, #7 //
-    MOV R8, #8 //
-    MOV R9, #9  // 
-    MOV R10, #10 // 
-    MOV R11, #11 //
-    MOV R12, #12 //
-    SVC #1 //
-  }
-  while(1){};*/
 
   OS_Init();
   OS_Fifo_Init();

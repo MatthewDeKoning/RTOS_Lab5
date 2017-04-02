@@ -23,18 +23,20 @@
 #define MAILBOXSIZE 30
 
 struct TCB * PLR = 0;
-
+int OS_AddProcessThread(void(*task)(void),  uint8_t priority, uint8_t id);
 static uint8_t OS_FIFO_Index;
 
 static Sema4Type FIFO_Free;
 static Sema4Type FIFO_Valid;
-
-uint8_t (*SV_0)(void) = &OS_Id; 
-void (*SV_1)(void) = &OS_Kill;
-void (*SV_2)(unsigned long) = &OS_Sleep;
-unsigned long (*SV_3)(void) = &OS_MsTime;
-int (*SV_4)(void(void), uint8_t, uint8_t ) = &OS_AddThread;
+//set up a table of functions for SV_Handler to call
+uint8_t (*SV_0)(void) = &OS_Id;                                 //SVC #0
+void (*SV_1)(void) = &OS_Kill;                                  //SVC #1
+void (*SV_2)(unsigned long) = &OS_Sleep;                        //SVC #2
+uint32_t (*SV_3)(uint8_t) = &SYSTICK_getCount;                       //SVC #3
+int (*SV_4)(void(void), uint8_t, uint8_t ) = &OS_AddProcessThread;     //SVC #4
 uint8_t (**SV_Funcs)(void) = &SV_0;
+//end table
+
 
 AddIndexFifo(OS, FIFOSIZE, unsigned long, FIFOSUCCESS, FIFOFAIL)
 
@@ -220,11 +222,41 @@ void OS_Kill(void){
   RunPt->id = 0;
   
   //call os suspend to context switch to the next tasks
-  //OS_Suspend();
+  OS_Suspend();
 }
 int OS_AddSW1Task(void(*pushTask)(void), void(*pullTask)(void), unsigned long priority){
   Switch_Init(pushTask, pullTask);
 }
+
+static uint32_t data_base;
+int OS_AddProcessThread(void(*task)(void),  uint8_t priority, uint8_t id){
+  uint8_t i;
+	for(i = TCB_COUNT; i > 0; i--){
+		if(tcbs[i-1].id == 0){
+			tcbs[i-1].id = id; //set id
+			tcbs[i-1].stackPt = &tcbs[i-1].Regs[0]; //set stack pointer
+			tcbs[i-1].PC = task;
+			tcbs[i-1].PSR = 0x01000000;
+      tcbs[i-1].Regs[5] = data_base;
+			if(RunPt == 0){
+				tcbs[i-1].next = &tcbs[i-1];
+        tcbs[i-1].prev = &tcbs[i-1];
+				RunPt = &tcbs[i-1];
+			}
+			else{
+				struct TCB* placeHolder = RunPt->next;
+				RunPt->next = (&tcbs[i-1]);
+				tcbs[i-1].next = placeHolder;
+        tcbs[i-1].prev = RunPt;
+        placeHolder->prev = &tcbs[i-1];
+			}
+			return 1;
+		}
+	}
+	//no empty tcb found
+	return -1;
+}
+
 int OS_AddThread(void(*task)(void),  uint8_t priority, uint8_t id){
   uint8_t i;
 	for(i = TCB_COUNT; i > 0; i--){
@@ -389,7 +421,7 @@ void OS_Idle(void){
     if((RunPt->next == RunPt) && (PLR != 0)){
       OS_EndProcess();
     }
-    OS_Suspend();
+    //OS_Suspend();
   }
 }
 
@@ -411,7 +443,7 @@ void static OS_EndProcess(void){
 //entry is starting PC, text and data are pointers to malloced data (must be freed upon ending)
 //sr is used to reenable the SYSTICK (see below, like enter and exit critial)
 int OS_AddProcess(entry_t entry, void* text, void* data, uint8_t priority, uint8_t id, long sr){
-  OS_UnLockScheduler(sr);
+  
   // MATTHEW'S NOTES:
   //get a PCB and set it up with the id, priority, and pointers
   //set a TCB up with the "entry" pointer as the PC
@@ -426,20 +458,27 @@ int OS_AddProcess(entry_t entry, void* text, void* data, uint8_t priority, uint8
   
   // ANDREW'S NOTES:
   // I don't use text, data, priority, or id. I'm leaving them, because we might need them later
+  DisableInterrupts();
   
-  if(!PLR){ //Check that this isn't a double nested Process i.e. there are only 2 allowed
+  if(PLR){ //Check that this isn't a double nested Process i.e. there are only 2 allowed
     return 0;
   }
+  data_base = (uint32_t) data;
   PLR = RunPt; // save where to return
   RunPt = 0;   // necessary for AddThread to create an unconnected linked list
-  OS_AddThread(entry, 0xFF, 2); // We will start with this thread
-  OS_AddThread(OS_Idle, 0xFF, 1); // In case all sleep, block, or are killed
+  OS_AddProcessThread(entry, 0xFF, 2); // We will start with this thread
+  OS_AddProcessThread(OS_Idle, 0xFF, 1); // In case all sleep, block, or are killed
   NextPt = RunPt; // Necessary for PendSV
   RunPt = PLR; // Necessary for PendSV
+  EnableInterrupts();
+  NVIC_ST_CURRENT_R = 0;       //reload the systick value without triggering the interrupt
+  OS_UnLockScheduler(sr);
   NVIC_INT_CTRL_R = 0x10000000; // Trigger PendSV to switch threads... and also processes
   
-  EnableInterrupts(); // The entire process should happen here <-
   
+  //EnableInterrupts(); // The entire process should happen here <-
+  NVIC_INT_CTRL_R = 0x10000000; // Trigger PendSV to switch threads... and also processes
+
   // This only happens AFTER the process has happened, 
   //  has been killed, and we're returning to the original process
   Heap_Free(text); // Deallocate memory

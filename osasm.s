@@ -73,18 +73,16 @@ SVC_Handler
   BIC  R12, #0xFF00
   LDM  SP, {R0, R3}
   PUSH {R4}
-  PUSH {R11}
+  PUSH {R5}
   PUSH {LR}
   LDR  R4, =SV_Funcs
   LDR  R4, [R4]
-  LSL  R11, R12, #2;
-  ADD  R4, R4, R11;
+  LSL  R5, R12, #2;
+  ADD  R4, R4, R5;
   LDR  R4, [R4]
-  MOV  LR, PC
-  ADD  LR, LR, #4
-  BX   R4
+  BLX  R4
   POP  {LR}
-  POP  {R11}
+  POP  {R5}
   POP  {R4}
   STR  R0, [SP]
   BX   LR
